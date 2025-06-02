@@ -12,11 +12,14 @@ const PhotoUpload = () => {
   const [message, setMessage] = useState("");
 
   const handleUpload = () => {
+    console.log("Upload button clicked!");
     if (!file || !year || !company || !platoon) {
+      console.log("Missing fields:", { file, year, company, platoon });
       setMessage("Fill out all fields and select a file.");
       return;
     }
 
+    console.log("Starting upload...");
     const storageRef = ref(storage, `gallery/${file.name}`);
     const uploadTask = uploadBytesResumable(storageRef, file);
 
@@ -25,12 +28,15 @@ const PhotoUpload = () => {
       (snapshot) => {
         const prog = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
         setProgress(prog);
+        console.log("Upload progress:", prog);
       },
       (error) => {
+        console.log("Upload error:", error);
         setMessage(`Error: ${error.message}`);
       },
       () => {
         getDownloadURL(uploadTask.snapshot.ref).then(async (url) => {
+          console.log("Upload complete. Download URL:", url);
           await addDoc(collection(db, "gallery"), {
             url,
             year,
