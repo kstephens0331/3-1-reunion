@@ -19,13 +19,10 @@ const Gallery = () => {
     <div className="container mx-auto py-8 text-center text-[#041E42]">
       <h1 className="text-3xl font-bold mb-4">Photo Gallery</h1>
       <PhotoUpload />
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-8">
         {photos.map((photo) => (
           <div key={photo.id} className="bg-white p-2 rounded shadow">
             <img src={photo.url} alt="Uploaded" className="w-full rounded" />
-            <p className="text-sm mt-2">
-              {photo.year} - {photo.company} - {photo.platoon}
-            </p>
           </div>
         ))}
       </div>
