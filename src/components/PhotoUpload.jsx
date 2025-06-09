@@ -1,42 +1,66 @@
 import { useState } from "react";
-import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
-import { storage, db } from "../firebase/firebase";
+import { supabase } from "../supabaseClient";
 
 const PhotoUpload = () => {
   const [file, setFile] = useState(null);
   const [progress, setProgress] = useState(0);
   const [message, setMessage] = useState("");
 
-  const handleUpload = () => {
-    if (!file) {
-      setMessage("Please select a file.");
+  const handleUpload = async () => {
+    if (!file || !(file instanceof File)) {
+      setMessage("Please select a valid image file.");
       return;
     }
 
-    const storageRef = ref(storage, `gallery/${file.name}`);
-    const uploadTask = uploadBytesResumable(storageRef, file);
+    const fileExt = file.name.split(".").pop();
+    const fileName = `${Date.now()}.${fileExt}`;
+    const filePath = `gallery/${fileName}`;
 
-    uploadTask.on(
-      "state_changed",
-      (snapshot) => {
-        const prog = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-        setProgress(prog);
+    // Upload to Supabase Storage
+    const { error: uploadError } = await supabase.storage
+      .from("photos") // Ensure this matches your bucket name
+      .upload(filePath, file, { upsert: true });
+
+    if (uploadError) {
+      console.error("Upload error:", uploadError.message);
+      setMessage(`Upload error: ${uploadError.message}`);
+      return;
+    }
+
+    // Get the public URL of the uploaded image
+    const { data: urlData, error: urlError } = supabase.storage
+      .from("photos")
+      .getPublicUrl(filePath);
+
+    if (urlError || !urlData?.publicUrl) {
+      console.error("URL error:", urlError?.message);
+      setMessage(`URL error: ${urlError?.message}`);
+      return;
+    }
+
+    // ✅ Define yearTaken properly before using it
+    const yearTaken = file.lastModified
+      ? new Date(file.lastModified).getFullYear()
+      : new Date().getFullYear();
+
+    // Insert photo metadata into the 'gallery' table
+    const { error: insertError } = await supabase.from("gallery").insert([
+      {
+        url: urlData.publicUrl,
+        filename: fileName,
+        yeartaken: yearTaken, // must match lowercase DB column
+        createdat: new Date().toISOString(),
       },
-      (error) => {
-        setMessage(`Error: ${error.message}`);
-      },
-      async () => {
-        const url = await getDownloadURL(uploadTask.snapshot.ref);
-        await addDoc(collection(db, "gallery"), {
-          url,
-          createdAt: serverTimestamp(),
-        });
-        setMessage("Upload complete!");
-        setFile(null);
-        setProgress(0);
-      }
-    );
+    ]);
+
+    if (insertError) {
+      console.error("Insert error:", insertError.message);
+      setMessage(`DB error: ${insertError.message}`);
+    } else {
+      setMessage("Upload complete!");
+      setFile(null);
+      setProgress(0);
+    }
   };
 
   return (
