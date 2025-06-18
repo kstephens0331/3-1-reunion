@@ -1,4 +1,4 @@
-import { supabase } from "../supabase";
+import { supabase } from "../supabaseClient";
 import React, { useState } from "react";
 
 export default function PhotoUpload() {
