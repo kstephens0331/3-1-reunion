@@ -1,138 +1,83 @@
-import { useState } from "react";
-import { supabase } from "../supabaseClient";
+import { supabase } from "../supabase";
+import React, { useState } from "react";
 
-// Helper: Generate SHA-256 hash of file
-const getFileHash = async (file) => {
-  const buffer = await file.arrayBuffer();
-  const hashBuffer = await crypto.subtle.digest("SHA-256", buffer);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
-};
-
-const PhotoUpload = () => {
-  const [files, setFiles] = useState([]);
-  const [message, setMessage] = useState("");
+export default function PhotoUpload() {
+  const [file, setFile] = useState(null);
+  const [yearTaken, setYearTaken] = useState("");
   const [uploading, setUploading] = useState(false);
-  const [progress, setProgress] = useState(0);
+  const [error, setError] = useState(null);
+
+  const handleFileChange = (e) => {
+    setFile(e.target.files[0]);
+  };
 
   const handleUpload = async () => {
-    if (!files.length || uploading) return;
+    if (!file || !yearTaken) {
+      alert("Please select a file and enter the year taken.");
+      return;
+    }
 
     setUploading(true);
-    setMessage("");
-    setProgress(0);
+    setError(null);
 
-    let uploadedCount = 0;
-    const skippedFiles = [];
+    const filePath = `gallery/${Date.now()}-${file.name}`;
+    const { error: uploadError } = await supabase.storage
+      .from("photos")
+      .upload(filePath, file);
 
-    for (const file of files) {
-      const hash = await getFileHash(file);
-
-      // Check for duplicate
-      const { data: existing } = await supabase
-        .from("gallery")
-        .select("id")
-        .eq("filehash", hash)
-        .maybeSingle();
-
-      if (existing) {
-        console.warn("Duplicate found, skipping:", file.name);
-        skippedFiles.push(file.name);
-        uploadedCount++;
-        setProgress(Math.round((uploadedCount / files.length) * 100));
-        continue;
-      }
-
-      const fileExt = file.name.split(".").pop();
-      const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
-      const filePath = `gallery/${fileName}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from("photos")
-        .upload(filePath, file, { upsert: true });
-
-      if (uploadError) {
-        console.error("Upload error:", uploadError.message);
-        setMessage(`Upload error: ${uploadError.message}`);
-        uploadedCount++;
-        setProgress(Math.round((uploadedCount / files.length) * 100));
-        continue;
-      }
-
-      const { data: urlData } = supabase.storage
-        .from("photos")
-        .getPublicUrl(filePath);
-
-      const yearTaken = file.lastModified
-        ? new Date(file.lastModified).getFullYear()
-        : new Date().getFullYear();
-
-      const { error: insertError } = await supabase.from("gallery").insert([
-        {
-          url: urlData.publicUrl,
-          filename: fileName,
-          yeartaken: yearTaken,
-          createdat: new Date().toISOString(),
-          filehash: hash,
-        },
-      ]);
-
-      if (insertError) {
-        console.error("Insert error:", insertError.message);
-      }
-
-      uploadedCount++;
-      setProgress(Math.round((uploadedCount / files.length) * 100));
+    if (uploadError) {
+      setError("Upload failed: " + uploadError.message);
+      setUploading(false);
+      return;
     }
 
-    if (skippedFiles.length > 0) {
-      setMessage(`Upload complete. Skipped duplicates: ${skippedFiles.join(", ")}`);
+    const {
+      data: { publicUrl },
+    } = supabase.storage.from("photos").getPublicUrl(filePath);
+
+    const fileHash = await hashFile(file);
+
+    const { error: insertError } = await supabase.from("gallery").insert({
+      filename: file.name,
+      url: publicUrl,
+      yeartaken: parseInt(yearTaken),
+      filehash: fileHash,
+    });
+
+    if (insertError) {
+      setError("Insert into gallery failed: " + insertError.message);
     } else {
-      setMessage("Upload complete!");
+      alert("Upload successful!");
     }
 
-    setFiles([]);
     setUploading(false);
   };
 
+  async function hashFile(file) {
+    const arrayBuffer = await file.arrayBuffer();
+    const hashBuffer = await crypto.subtle.digest("SHA-256", arrayBuffer);
+    return [...new Uint8Array(hashBuffer)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  }
+
   return (
-    <div className="text-center text-[#041E42]">
-      <h2 className="text-2xl font-bold mb-4">Upload Photos</h2>
-
+    <div className="max-w-xl mx-auto py-8">
+      <h2 className="text-xl font-bold mb-4">Upload a Photo</h2>
+      <input type="file" onChange={handleFileChange} />
       <input
-        type="file"
-        multiple
-        onChange={(e) => setFiles([...e.target.files])}
-        disabled={uploading}
-        className="mb-2"
+        type="number"
+        className="border p-2 mt-2 w-full"
+        placeholder="Year Taken"
+        value={yearTaken}
+        onChange={(e) => setYearTaken(e.target.value)}
       />
-      <br />
-
       <button
         onClick={handleUpload}
-        disabled={uploading || !files.length}
-        className={`px-4 py-2 rounded mt-2 ${
-          uploading ? "bg-gray-400 cursor-not-allowed" : "bg-[#C99700] hover:bg-yellow-600"
-        } text-white`}
+        className="bg-blue-600 text-white px-4 py-2 mt-4 rounded"
+        disabled={uploading}
       >
-        {uploading ? "Uploading..." : "Upload"}
+        {uploading ? "Uploading..." : "Upload Photo"}
       </button>
-
-      {progress > 0 && (
-        <div className="mt-2">
-          <div className="h-3 bg-gray-200 rounded">
-            <div
-              className="h-3 bg-[#C99700] rounded"
-              style={{ width: `${progress}%` }}
-            ></div>
-          </div>
-          <p className="text-sm mt-1">{progress}% complete</p>
-        </div>
-      )}
-
-      {message && <p className="mt-4 text-sm">{message}</p>}
+      {error && <p className="text-red-600 mt-2">{error}</p>}
     </div>
   );
-};
-
-export default PhotoUpload;
+}
